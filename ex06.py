@@ -8,15 +8,15 @@ Exercise 6
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
-import folium
-from branca.colormap import LinearColormap
+import mplcursors
+import contextily
 
 # Rough box around South LA, Downtown LA, and Koreatown
 # (change these numbers if the map looks off)
-SOUTH = 33.93
-NORTH = 34.07
-WEST = -118.34
-EAST = -118.19
+SOUTH = 34.025
+NORTH = 34.065
+WEST = -118.28
+EAST = -118.225
 
 # Prices at or below LOW are fully green, prices at or above HIGH are fully red
 LOW_PRICE = 0.50
@@ -75,77 +75,77 @@ def cleanData(data):
         data = data[data["Latitude"] < NORTH]
         data = data[data["Longitude"] > WEST]
         data = data[data["Longitude"] < EAST]
+
+        # sorts cheapest to most expensive so the red dots are drawn on top
+        data = data.sort_values("Price")
         return data
     except (KeyError, ValueError):
         print("Something is wrong with the columns in the file.")
         return None
 
-# Function: makeColorScale
-# Purpose: makes the green -> yellow -> red color range for prices
-# Parameters: none
-# Side Effects: none
-# Returns: the color scale
-def makeColorScale():
-    colorScale = LinearColormap(
-        ["green", "yellow", "red"],
-        vmin=LOW_PRICE,
-        vmax=HIGH_PRICE
-    )
-    colorScale.caption = "Meter price per hour (highest rate)"
-    return colorScale
-
 # Function: graphCounts
-# Purpose: shows a bar chart of how many meters are at each price
-# Parameters: 2, the data and the color scale
-# Side Effects: shows a chart
+# Purpose: makes a bar chart of how many meters are at each price
+# Parameters: 1, the data
+# Side Effects: creates a chart (it appears when plt.show() runs in main)
 # Returns: none
-def graphCounts(data, colorScale):
+def graphCounts(data):
     counts = data["Price"].value_counts().sort_index()
 
     labels = []
-    colors = []
     for price in counts.index:
         labels.append("$" + format(price, ".2f"))
-        colors.append(colorScale(price))
 
     plt.figure(figsize=(10, 5))
-    plt.bar(labels, counts.values, color=colors)
+    plt.bar(labels, counts.values, color="steelblue")
     plt.title("Parking Meters by Price (South LA, Downtown, Koreatown)")
     plt.xlabel("Highest hourly price")
     plt.ylabel("Number of meters")
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.show()
 
-# Function: makeMap
-# Purpose: makes a map with a colored dot on every meter
-# Parameters: 2, the data and the color scale
-# Side Effects: saves parking_map.html
+# Function: graphMap
+# Purpose: makes a map of the meters, colored green (cheap) to red (expensive)
+# Parameters: 1, the data
+# Side Effects: creates a map (it appears when plt.show() runs in main)
 # Returns: none
-def makeMap(data, colorScale):
-    parkingMap = folium.Map(location=[34.02, -118.28], zoom_start=12)
+def graphMap(data):
+    ax = data.plot.scatter(
+        x="Longitude",
+        y="Latitude",
+        c="Price",
+        cmap="RdYlGn_r",
+        vmin=LOW_PRICE,
+        vmax=HIGH_PRICE,
+        s=6,
+        colorbar=True,
+        figsize=(9, 9)
+    )
+    # stretches the map a little so LA is not squished
+    ax.set_aspect(1.2)
+    ax.set_title("LA Parking Meter Prices per Hour (zoom with the magnifier button)")
 
-    for index, row in data.iterrows():
-        label = row["BlockFace"] + ": " + row["RateRange"] + " (" + row["MeteredTimeLimit"] + " limit)"
+ 
+    # gray street map (best for seeing the colored dots)
+    contextily.add_basemap(ax, crs="EPSG:4326", source=contextily.providers.Esri.WorldGrayCanvas)
+  
 
-        folium.CircleMarker(
-            location=[row["Latitude"], row["Longitude"]],
-            radius=4,
-            color=colorScale(row["Price"]),
-            weight=0,
-            fill=True,
-            fill_opacity=0.8,
-            tooltip=label
-        ).add_to(parkingMap)
+    # shows the street and price when you hover over a dot
+    cursor = mplcursors.cursor(ax.collections[0], hover=True)
 
-    colorScale.add_to(parkingMap)
-    parkingMap.save("parking_map.html")
-    print("Map saved as parking_map.html. Open it in your browser.")
+    # Function: onHover
+    # Purpose: sets the hover text for the meter you are pointing at
+    # Parameters: 1, the selected dot
+    # Side Effects: changes the text of the hover box
+    # Returns: none
+    @cursor.connect("add")
+    def onHover(selected):
+        row = data.iloc[selected.index]
+        selected.annotation.set_text(row["BlockFace"] + "\n" + row["RateRange"])
 
 # Function: main
-# Purpose: runs loadFile, cleanData, graphCounts, and makeMap
+# Purpose: runs loadFile, cleanData, graphCounts, and graphMap
 # Parameters: none
-# Side Effects: prints to the console, asks for input, makes a chart and a map
+# Side Effects: prints to the console, asks for input, shows a chart and a map
 # Returns: none
 def main():
     fileName = input("Enter the name of the file: ")
@@ -157,8 +157,9 @@ def main():
         return
     print("Meters in the area:", len(data))
 
-    colorScale = makeColorScale()
-    graphCounts(data, colorScale)
-    makeMap(data, colorScale)
+    graphCounts(data)
+    graphMap(data)
+    # shows both windows at the same time
+    plt.show()
 
 main()
