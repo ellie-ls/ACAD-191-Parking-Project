@@ -7,6 +7,7 @@ Exercise 6
 
 import os
 import re
+import json
 import webbrowser
 import pandas as pd
 import matplotlib
@@ -16,6 +17,9 @@ from matplotlib.path import Path
 import contextily
 import folium
 import branca.colormap
+from branca.element import MacroElement
+from folium.elements import JSCSSMixin
+from folium.template import Template
 
 SOUTH = 34.025
 NORTH = 34.065
@@ -66,7 +70,8 @@ def getPrice(rateText):
         for number in numbers:
             prices.append(float(number))
 
-
+        # "/H" rates are like "$1.5/H - $6/10H": the first number is the hourly
+        # price and the second is a total for many hours, so only use the first
         if "/H" in rateText:
             return prices[0]
         return max(prices)
@@ -92,6 +97,7 @@ def cleanData(data):
         data = data[data["Longitude"] > WEST]
         data = data[data["Longitude"] < EAST]
 
+        # sorts cheapest to most expensive so the red dots are drawn on top
         data = data.sort_values("Price")
         return data
     except (KeyError, ValueError):
@@ -112,7 +118,7 @@ def graphCounts(data):
 
     plt.figure(figsize=(10, 5))
     plt.bar(labels, counts.values, color="steelblue")
-    plt.title("Parking Meters by Price (South LA, Downtown, Koreatown)")
+    plt.title("Parking Meters by Price (Downtown LA)")
     plt.xlabel("Highest hourly price")
     plt.ylabel("Number of meters")
     plt.xticks(rotation=45)
@@ -160,7 +166,8 @@ def bubbleShape(x, y, width, height, fontSize):
 # Side Effects: creates a map (it appears when plt.show() runs in main),
 #               makes the meter you point at bigger and shows a box above it
 #               (the box fades in the first time, then slides from meter to meter),
-#               and lets you zoom it by scrolling the trackpad or mouse wheel
+#               lets you zoom by scrolling the trackpad or mouse wheel,
+#               and lets you move the map by dragging
 # Returns: none
 def graphMap(data):
     ax = data.plot.scatter(
@@ -175,31 +182,16 @@ def graphMap(data):
         figsize=(9, 9)
     )
     ax.set_aspect(1.2)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-    ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom)")
+    ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom, drag to move)")
 
     colorbar = ax.figure.axes[-1]
     colorbar.yaxis.set_major_formatter("${x:.2f}")
     colorbar.set_ylabel("Highest hourly price")
-=======
-    ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom, drag to move)")
->>>>>>> Stashed changes
-=======
-    ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom, drag to move)")
->>>>>>> Stashed changes
-=======
-    ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom, drag to move)")
->>>>>>> Stashed changes
-=======
-    ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom, drag to move)")
->>>>>>> Stashed changes
 
     contextily.add_basemap(ax, crs="EPSG:4326", source=contextily.providers.Esri.WorldGrayCanvas)
 
     canvas = ax.figure.canvas
+    figure = ax.figure
     dots = ax.collections[0]
 
     # the box and the big dot are "animated" so they can be redrawn quickly
@@ -291,12 +283,12 @@ def graphMap(data):
             timer.stop()
         drawHover()
 
-    # Function: onMove
+    # Function: onHover
     # Purpose: finds the meter under the mouse and sends the hover box and the big dot to it
     # Parameters: 1, the mouse move event
     # Side Effects: changes the hover text and starts the timer that moves the box
     # Returns: none
-    def onMove(event):
+    def onHover(event):
         if event.inaxes != ax:
             return
         found, details = dots.contains(event)
@@ -331,14 +323,14 @@ def graphMap(data):
 
     timer.add_callback(moveHover)
     canvas.mpl_connect("draw_event", onDraw)
-    canvas.mpl_connect("motion_notify_event", onMove)
+    canvas.mpl_connect("motion_notify_event", onHover)
 
     fullWest, fullEast = ax.get_xlim()
     fullSouth, fullNorth = ax.get_ylim()
 
     # Function: zoomSide
     # Purpose: figures out the new edges of one side of the map (left/right or bottom/top) after a zoom
-    # Parameters: 5, the current low and high edges, the mouse position, the zoom amount, and the full low and high edges
+    # Parameters: 6, the current low and high edges, the mouse position, the zoom amount, and the full low and high edges
     # Side Effects: none
     # Returns: the new low and high edges
     def zoomSide(low, high, mouse, scale, fullLow, fullHigh):
@@ -356,7 +348,7 @@ def graphMap(data):
         return newLow, newHigh
 
     # Function: onScroll
-    # Purpose: zooms the map in or out around the mouse when you scroll
+    # Purpose: zooms the map in or out around the mouse when you scroll (two fingers on the trackpad)
     # Parameters: 1, the scroll event
     # Side Effects: changes the area the map is showing
     # Returns: none
@@ -364,6 +356,7 @@ def graphMap(data):
         if event.inaxes != ax:
             return
 
+        # step can be a small fraction on a trackpad, so the zoom is smooth
         step = max(-MAX_SCROLL, min(MAX_SCROLL, event.step))
         scale = ZOOM_SPEED ** step
 
@@ -371,31 +364,10 @@ def graphMap(data):
         south, north = ax.get_ylim()
         ax.set_xlim(zoomSide(west, east, event.xdata, scale, fullWest, fullEast))
         ax.set_ylim(zoomSide(south, north, event.ydata, scale, fullSouth, fullNorth))
-        event.canvas.draw_idle()
+        figure.canvas.draw_idle()
 
-    ax.figure.canvas.mpl_connect("scroll_event", onScroll)
-
-    figure = ax.figure
     # remembers where a drag started (in screen pixels) and what the map showed then
     drag = {"start": None}
-
-    # Function: onScroll
-    # Purpose: zooms in or out around the mouse when you scroll (two fingers on the trackpad)
-    # Parameters: 1, the scroll event
-    # Side Effects: changes the area the map shows
-    # Returns: none
-    def onScroll(event):
-        if event.inaxes != ax:
-            return
-        # scrolling up zooms in, scrolling down zooms out
-        # (step can be a small fraction on a trackpad, so the zoom is smooth)
-        factor = 0.9 ** event.step
-        left, right = ax.get_xlim()
-        bottom, top = ax.get_ylim()
-        # keeps the spot under the mouse in the same place while zooming
-        ax.set_xlim(event.xdata - (event.xdata - left) * factor, event.xdata + (right - event.xdata) * factor)
-        ax.set_ylim(event.ydata - (event.ydata - bottom) * factor, event.ydata + (top - event.ydata) * factor)
-        figure.canvas.draw_idle()
 
     # Function: onPress
     # Purpose: starts dragging the map when you click on it
@@ -409,19 +381,18 @@ def graphMap(data):
             return
         drag["start"] = (event.x, event.y, ax.get_xlim(), ax.get_ylim())
 
-    # Function: onMove
+    # Function: onDrag
     # Purpose: moves the map along with the mouse while you drag
     # Parameters: 1, the mouse event
     # Side Effects: changes the area the map shows
     # Returns: none
-    def onMove(event):
+    def onDrag(event):
         if drag["start"] is None:
             return
         startX, startY, (left, right), (bottom, top) = drag["start"]
         # turns how far the mouse moved (in pixels) into how far to move the map
-        box = ax.bbox
-        moveX = (event.x - startX) * (right - left) / box.width
-        moveY = (event.y - startY) * (top - bottom) / box.height
+        moveX = (event.x - startX) * (right - left) / ax.bbox.width
+        moveY = (event.y - startY) * (top - bottom) / ax.bbox.height
         ax.set_xlim(left - moveX, right - moveX)
         ax.set_ylim(bottom - moveY, top - moveY)
         figure.canvas.draw_idle()
@@ -434,10 +405,10 @@ def graphMap(data):
     def onRelease(event):
         drag["start"] = None
 
-    figure.canvas.mpl_connect("scroll_event", onScroll)
-    figure.canvas.mpl_connect("button_press_event", onPress)
-    figure.canvas.mpl_connect("motion_notify_event", onMove)
-    figure.canvas.mpl_connect("button_release_event", onRelease)
+    canvas.mpl_connect("scroll_event", onScroll)
+    canvas.mpl_connect("button_press_event", onPress)
+    canvas.mpl_connect("motion_notify_event", onDrag)
+    canvas.mpl_connect("button_release_event", onRelease)
 
 # Function: getColor
 # Purpose: picks a color for a price, green (cheap) to red (expensive), same as the python map
@@ -450,132 +421,272 @@ def getColor(price):
     amount = min(max(amount, 0), 1)
     return matplotlib.colors.to_hex(plt.get_cmap("RdYlGn_r")(amount))
 
-# Function: graphWebMap
-# Purpose: makes a web map of the meters you can pinch to zoom and drag around in the browser
-#          (the street map loads new pictures at every zoom level, so it stays sharp up close)
-# Parameters: 1, the data
-# Side Effects: saves the map as an html file and opens it in the web browser
-# Returns: none
-def graphWebMap(data):
-    # starts centered on the middle of the area
-    center = [(SOUTH + NORTH) / 2, (WEST + EAST) / 2]
-    webMap = folium.Map(
-        location=center,
-        zoom_start=14,
-        # gray street map (best for seeing the colored dots)
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-        attr="Tiles &copy; Esri",
-        # makes thousands of dots draw much faster
-        prefer_canvas=True
-    )
+# Class: VectorStreetMap
+# Purpose: adds a "vector" street map behind the dots. Instead of downloading pictures of the map
+#          (which get pixelated up close), the browser gets the street data and draws it itself,
+#          so roads stay sharp and street names stay the same size at every zoom.
+#          Map from OpenFreeMap (free, no key needed), drawn with MapLibre.
+class VectorStreetMap(JSCSSMixin, MacroElement):
+    # the JavaScript code that runs on the web page
+    _template = Template("""
+        {% macro script(this, kwargs) %}
+            L.maplibreGL({
+                style: "https://tiles.openfreemap.org/styles/positron",
+                attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }).addTo({{ this._parent.get_name() }});
+            {{ this._parent.get_name() }}.setMaxZoom(20);
+        {% endmacro %}
+    """)
 
-    for index, row in data.iterrows():
-        color = getColor(row["Price"])
-        folium.CircleMarker(
-            location=[row["Latitude"], row["Longitude"]],
-            radius=4,
-            color=color,
-            fill=True,
-            fill_color=color,
-            fill_opacity=0.9,
-            weight=1,
-            # shows the street and price when you hover over a dot
-            tooltip=row["BlockFace"] + "<br>" + row["RateRange"]
-        ).add_to(webMap)
+    # the libraries the web page needs to load
+    default_js = [
+        ("maplibre", "https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"),
+        ("maplibre_leaflet", "https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js")
+    ]
+    default_css = [
+        ("maplibre_css", "https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css")
+    ]
 
-    # color key in the corner
-    legend = branca.colormap.LinearColormap(
-        [getColor(LOW_PRICE), getColor((LOW_PRICE + HIGH_PRICE) / 2), getColor(HIGH_PRICE)],
-        vmin=LOW_PRICE,
-        vmax=HIGH_PRICE,
-        caption="Highest hourly price ($)"
-    )
-    legend.add_to(webMap)
+# Class: RegionOutlines
+# Purpose: draws a dashed outline and a name label for Koreatown, Downtown, and South LA.
+#          Each region only shows up once you have zoomed out far enough to see all of it.
+#          Outlines are from the LA Times "Mapping L.A." project (saved in regions.geojson).
+class RegionOutlines(MacroElement):
+    # the style for the region names (goes in the <head> of the web page)
+    # and the JavaScript code that runs on the web page
+    _template = Template("""
+        {% macro header(this, kwargs) %}
+            <style>
+                .region-label {
+                    background: none;
+                    border: none;
+                    box-shadow: none;
+                    color: #1e293b;
+                    font-size: 15px;
+                    font-weight: 700;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+                }
+                .region-label::before {
+                    display: none;
+                }
+            </style>
+        {% endmacro %}
 
-    # saves the map next to this file and opens it
-    mapFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parking_map.html")
-    webMap.save(mapFile)
-    webbrowser.open("file://" + mapFile)
-    print("Web map opened in your browser:", mapFile)
+        {% macro script(this, kwargs) %}
+            (function() {
+                var map = {{ this._parent.get_name() }};
 
-    figure = ax.figure
-    # remembers where a drag started (in screen pixels) and what the map showed then
-    drag = {"start": None}
+                // a layer under the dots, so the outlines never cover a meter
+                map.createPane("regions");
+                map.getPane("regions").style.zIndex = 350;
+                var renderer = L.svg({ pane: "regions" });
 
-    # Function: onScroll
-    # Purpose: zooms in or out around the mouse when you scroll (two fingers on the trackpad)
-    # Parameters: 1, the scroll event
-    # Side Effects: changes the area the map shows
+                var regionData = {{ this.regions|tojson }};
+                var regions = [];
+                regionData.features.forEach(function(feature) {
+                    var outline = L.geoJSON(feature, {
+                        pane: "regions",
+                        renderer: renderer,
+                        interactive: false,
+                        style: { color: "#334155", weight: 2, dashArray: "6 4", fill: false }
+                    });
+                    var label = L.tooltip({ permanent: true, direction: "center", className: "region-label" })
+                        .setLatLng(outline.getBounds().getCenter())
+                        .setContent(feature.properties.name);
+                    regions.push({ bounds: outline.getBounds(), group: L.layerGroup([outline, label]) });
+                });
+
+                // shows a region only when the whole thing fits on the screen
+                function updateRegions() {
+                    var screen = map.getBounds();
+                    regions.forEach(function(region) {
+                        if (screen.contains(region.bounds)) {
+                            region.group.addTo(map);
+                        } else {
+                            region.group.remove();
+                        }
+                    });
+                }
+                map.on("moveend", updateRegions);
+                updateRegions();
+            })();
+        {% endmacro %}
+    """)
+
+    # Function: __init__
+    # Purpose: saves the region outlines so the template can put them in the web page
+    # Parameters: 1, the regions (GeoJSON, as a dictionary)
+    # Side Effects: none
     # Returns: none
-    def onScroll(event):
-        if event.inaxes != ax:
-            return
-        # scrolling up zooms in, scrolling down zooms out
-        # (step can be a small fraction on a trackpad, so the zoom is smooth)
-        factor = 0.9 ** event.step
-        left, right = ax.get_xlim()
-        bottom, top = ax.get_ylim()
-        # keeps the spot under the mouse in the same place while zooming
-        ax.set_xlim(event.xdata - (event.xdata - left) * factor, event.xdata + (right - event.xdata) * factor)
-        ax.set_ylim(event.ydata - (event.ydata - bottom) * factor, event.ydata + (top - event.ydata) * factor)
-        figure.canvas.draw_idle()
+    def __init__(self, regions):
+        super().__init__()
+        self.regions = regions
 
-    # Function: onPress
-    # Purpose: starts dragging the map when you click on it
-    # Parameters: 1, the mouse event
-    # Side Effects: saves where the drag started
+# Class: OpenChance
+# Purpose: adds "Usually open X% of the time" to each meter's hover box, using the numbers
+#          from occupancy.json (made by build_occupancy.py). A box in the corner lets you pick
+#          the day and hour; it starts on "Right now" (LA time).
+class OpenChance(MacroElement):
+    # the style for the picker and hover text, and the JavaScript code that runs on the web page
+    _template = Template("""
+        {% macro header(this, kwargs) %}
+            <style>
+                .open-chance-picker {
+                    background: #fff;
+                    border-radius: 6px;
+                    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+                    font: 13px/1.4 system-ui, sans-serif;
+                    padding: 8px 10px;
+                }
+                .open-chance-picker label {
+                    display: block;
+                    font-weight: 600;
+                    margin-bottom: 4px;
+                }
+                .open-chance-picker select {
+                    font: inherit;
+                    margin-right: 4px;
+                }
+                .open-chance-picker .note {
+                    color: #64748b;
+                    font-size: 11px;
+                    margin-top: 4px;
+                }
+                .open-chance-note {
+                    color: #64748b;
+                    font-size: 11px;
+                }
+            </style>
+        {% endmacro %}
+
+        {% macro script(this, kwargs) %}
+            (function() {
+                var map = {{ this._parent.get_name() }};
+                var occupancy = {{ this.meters|tojson }};
+                var DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+                // "2 PM" style hour names
+                function hourName(hour) {
+                    var h = hour % 24;
+                    return (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? " AM" : " PM");
+                }
+
+                // the day/hour picker in the top right corner
+                var picker = L.control({ position: "topright" });
+                picker.onAdd = function() {
+                    var box = L.DomUtil.create("div", "open-chance-picker");
+                    var days = '<option value="now">Right now</option>';
+                    DAYS.forEach(function(day, i) { days += '<option value="' + i + '">' + day + '</option>'; });
+                    var hours = "";
+                    for (var h = 0; h < 24; h++) {
+                        hours += '<option value="' + h + '"' + (h === 12 ? " selected" : "") + '>' + hourName(h) + '</option>';
+                    }
+                    box.innerHTML = '<label>Chance a spot is open</label>' +
+                        '<select class="day">' + days + '</select>' +
+                        '<select class="hour" disabled>' + hours + '</select>' +
+                        '<div class="note">From parking sensors, {{ this.dates }}</div>';
+                    // so using the picker doesn't drag or zoom the map
+                    L.DomEvent.disableClickPropagation(box);
+                    L.DomEvent.disableScrollPropagation(box);
+                    box.querySelector(".day").addEventListener("change", function() {
+                        box.querySelector(".hour").disabled = (this.value === "now");
+                    });
+                    picker.box = box;
+                    return box;
+                };
+                picker.addTo(map);
+
+                // the day (0 = Monday) and hour chosen in the picker, or the current time in LA
+                function chosenTime() {
+                    var day = picker.box.querySelector(".day").value;
+                    if (day !== "now") {
+                        return { day: Number(day), hour: Number(picker.box.querySelector(".hour").value) };
+                    }
+                    var parts = new Intl.DateTimeFormat("en-US", {
+                        timeZone: "America/Los_Angeles", weekday: "short", hour: "numeric", hourCycle: "h23"
+                    }).formatToParts(new Date());
+                    var weekday = parts.find(function(p) { return p.type === "weekday"; }).value;
+                    var hour = Number(parts.find(function(p) { return p.type === "hour"; }).value);
+                    return { day: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(weekday), hour: hour };
+                }
+
+                // the line added to the hover box for one meter
+                function describe(spaceId) {
+                    var meter = occupancy[spaceId];
+                    if (!meter) {
+                        return '<span class="open-chance-note">No sensor data nearby</span>';
+                    }
+                    var time = chosenTime();
+                    var when = DAYS[time.day] + " " + hourName(time.hour) + "–" + hourName(time.hour + 1);
+                    var percent = meter.open[time.day * 24 + time.hour];
+                    if (percent === null) {
+                        return '<span class="open-chance-note">Not enough data for ' + when + '</span>';
+                    }
+                    var how = "measured over " + meter.weeks + " weeks";
+                    if (meter.source === "nearby") {
+                        how = "based on nearby spots";
+                    } else if (meter.source === "nearby-less-certain") {
+                        how = "based on nearby spots, less certain";
+                    }
+                    return '<b>Usually open ' + percent + '% of the time</b><br>' +
+                        '<span class="open-chance-note">' + when + ' · ' + how + '</span>';
+                }
+
+                // fills in the open chance every time a hover box opens, so it matches the picker
+                map.on("tooltipopen", function(e) {
+                    var tooltip = e.tooltip;
+                    if (tooltip.originalText === undefined) {
+                        tooltip.originalText = tooltip.getContent();
+                    }
+                    var text = tooltip.originalText;
+                    var match = typeof text === "string" && text.match(/<span data-open=([^> ]+)><.span>/);
+                    if (match) {
+                        tooltip.setContent(text.replace(match[0], describe(match[1])));
+                    }
+                });
+            })();
+        {% endmacro %}
+    """)
+
+    # Function: __init__
+    # Purpose: saves the open chances so the template can put them in the web page
+    # Parameters: 2, the open chances for each meter on the map, and the months the data covers
+    # Side Effects: none
     # Returns: none
-    def onPress(event):
-        # skips if you are using the toolbar's zoom or move button
-        toolbar = figure.canvas.toolbar
-        if event.inaxes != ax or event.button != 1 or (toolbar is not None and toolbar.mode != ""):
-            return
-        drag["start"] = (event.x, event.y, ax.get_xlim(), ax.get_ylim())
+    def __init__(self, meters, dates):
+        super().__init__()
+        self.meters = meters
+        self.dates = dates
 
-    # Function: onMove
-    # Purpose: moves the map along with the mouse while you drag
-    # Parameters: 1, the mouse event
-    # Side Effects: changes the area the map shows
-    # Returns: none
-    def onMove(event):
-        if drag["start"] is None:
-            return
-        startX, startY, (left, right), (bottom, top) = drag["start"]
-        # turns how far the mouse moved (in pixels) into how far to move the map
-        box = ax.bbox
-        moveX = (event.x - startX) * (right - left) / box.width
-        moveY = (event.y - startY) * (top - bottom) / box.height
-        ax.set_xlim(left - moveX, right - moveX)
-        ax.set_ylim(bottom - moveY, top - moveY)
-        figure.canvas.draw_idle()
+# Function: loadOccupancy
+# Purpose: loads occupancy.json (the open chances made by build_occupancy.py)
+# Parameters: none
+# Side Effects: prints a message if the file is missing
+# Returns: the occupancy data, or None
+def loadOccupancy():
+    occupancyFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "occupancy.json")
+    try:
+        with open(occupancyFile) as file:
+            return json.load(file)
+    except FileNotFoundError:
+        print("occupancy.json not found, so the map will not show open chances (run build_occupancy.py)")
+        return None
 
-    # Function: onRelease
-    # Purpose: stops dragging when you let go of the mouse
-    # Parameters: 1, the mouse event
-    # Side Effects: clears the saved drag
-    # Returns: none
-    def onRelease(event):
-        drag["start"] = None
-
-    figure.canvas.mpl_connect("scroll_event", onScroll)
-    figure.canvas.mpl_connect("button_press_event", onPress)
-    figure.canvas.mpl_connect("motion_notify_event", onMove)
-    figure.canvas.mpl_connect("button_release_event", onRelease)
-
-# Function: getColor
-# Purpose: picks a color for a price, green (cheap) to red (expensive), same as the python map
-# Parameters: 1, the price
+# Function: monthName
+# Purpose: turns "2023_09" into "Sep 2023"
+# Parameters: 1, the month text
 # Side Effects: none
-# Returns: the color as a hex string like "#1a9850"
-def getColor(price):
-    # turns the price into a number from 0 to 1 (0 = LOW_PRICE, 1 = HIGH_PRICE)
-    amount = (price - LOW_PRICE) / (HIGH_PRICE - LOW_PRICE)
-    amount = min(max(amount, 0), 1)
-    return matplotlib.colors.to_hex(plt.get_cmap("RdYlGn_r")(amount))
+# Returns: the month name
+def monthName(month):
+    return pd.Timestamp(month.replace("_", "-") + "-01").strftime("%b %Y")
 
 # Function: graphWebMap
-# Purpose: makes a web map of the meters you can pinch to zoom and drag around in the browser
-#          (the street map loads new pictures at every zoom level, so it stays sharp up close)
+# Purpose: makes a web map of the meters you can pinch to zoom and drag around in the browser,
+#          with the chance each spot is open in the hover box
+#          (the street map is drawn by the browser, so it stays sharp and the street names stay
+#          the same size at every zoom, like Apple Maps)
 # Parameters: 1, the data
 # Side Effects: saves the map as an html file and opens it in the web browser
 # Returns: none
@@ -585,15 +696,40 @@ def graphWebMap(data):
     webMap = folium.Map(
         location=center,
         zoom_start=14,
-        # gray street map (best for seeing the colored dots)
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-        attr="Tiles &copy; Esri",
+        # the street map is added below instead
+        tiles=None,
         # makes thousands of dots draw much faster
         prefer_canvas=True
     )
 
+    # light gray street map that the browser draws itself, so it stays sharp at every zoom
+    VectorStreetMap().add_to(webMap)
+
+    # outlines and names for Koreatown, Downtown, and South LA (only shown when zoomed out)
+    regionFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "regions.geojson")
+    try:
+        with open(regionFile) as file:
+            RegionOutlines(json.load(file)).add_to(webMap)
+    except FileNotFoundError:
+        print("regions.geojson not found, so the map will not show region outlines")
+
+    # "Usually open X% of the time" in the hover boxes
+    occupancy = loadOccupancy()
+    if occupancy is not None:
+        spaceIds = data["SpaceID"].str.strip()
+        onMap = {}
+        for spaceId in spaceIds:
+            if spaceId in occupancy["meters"]:
+                onMap[spaceId] = occupancy["meters"][spaceId]
+        dates = monthName(occupancy["from"]) + " \u2013 " + monthName(occupancy["to"])
+        OpenChance(onMap, dates).add_to(webMap)
+
     for index, row in data.iterrows():
         color = getColor(row["Price"])
+        # the empty span gets filled in with the open chance when you hover
+        openChance = ""
+        if occupancy is not None:
+            openChance = "<br><span data-open=" + row["SpaceID"].strip() + "></span>"
         folium.CircleMarker(
             location=[row["Latitude"], row["Longitude"]],
             radius=4,
@@ -603,253 +739,7 @@ def graphWebMap(data):
             fill_opacity=0.9,
             weight=1,
             # shows the street and price when you hover over a dot
-            tooltip=row["BlockFace"] + "<br>" + row["RateRange"]
-        ).add_to(webMap)
-
-    # color key in the corner
-    legend = branca.colormap.LinearColormap(
-        [getColor(LOW_PRICE), getColor((LOW_PRICE + HIGH_PRICE) / 2), getColor(HIGH_PRICE)],
-        vmin=LOW_PRICE,
-        vmax=HIGH_PRICE,
-        caption="Highest hourly price ($)"
-    )
-    legend.add_to(webMap)
-
-    # saves the map next to this file and opens it
-    mapFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parking_map.html")
-    webMap.save(mapFile)
-    webbrowser.open("file://" + mapFile)
-    print("Web map opened in your browser:", mapFile)
-
-    figure = ax.figure
-    # remembers where a drag started (in screen pixels) and what the map showed then
-    drag = {"start": None}
-
-    # Function: onScroll
-    # Purpose: zooms in or out around the mouse when you scroll (two fingers on the trackpad)
-    # Parameters: 1, the scroll event
-    # Side Effects: changes the area the map shows
-    # Returns: none
-    def onScroll(event):
-        if event.inaxes != ax:
-            return
-        # scrolling up zooms in, scrolling down zooms out
-        # (step can be a small fraction on a trackpad, so the zoom is smooth)
-        factor = 0.9 ** event.step
-        left, right = ax.get_xlim()
-        bottom, top = ax.get_ylim()
-        # keeps the spot under the mouse in the same place while zooming
-        ax.set_xlim(event.xdata - (event.xdata - left) * factor, event.xdata + (right - event.xdata) * factor)
-        ax.set_ylim(event.ydata - (event.ydata - bottom) * factor, event.ydata + (top - event.ydata) * factor)
-        figure.canvas.draw_idle()
-
-    # Function: onPress
-    # Purpose: starts dragging the map when you click on it
-    # Parameters: 1, the mouse event
-    # Side Effects: saves where the drag started
-    # Returns: none
-    def onPress(event):
-        # skips if you are using the toolbar's zoom or move button
-        toolbar = figure.canvas.toolbar
-        if event.inaxes != ax or event.button != 1 or (toolbar is not None and toolbar.mode != ""):
-            return
-        drag["start"] = (event.x, event.y, ax.get_xlim(), ax.get_ylim())
-
-    # Function: onMove
-    # Purpose: moves the map along with the mouse while you drag
-    # Parameters: 1, the mouse event
-    # Side Effects: changes the area the map shows
-    # Returns: none
-    def onMove(event):
-        if drag["start"] is None:
-            return
-        startX, startY, (left, right), (bottom, top) = drag["start"]
-        # turns how far the mouse moved (in pixels) into how far to move the map
-        box = ax.bbox
-        moveX = (event.x - startX) * (right - left) / box.width
-        moveY = (event.y - startY) * (top - bottom) / box.height
-        ax.set_xlim(left - moveX, right - moveX)
-        ax.set_ylim(bottom - moveY, top - moveY)
-        figure.canvas.draw_idle()
-
-    # Function: onRelease
-    # Purpose: stops dragging when you let go of the mouse
-    # Parameters: 1, the mouse event
-    # Side Effects: clears the saved drag
-    # Returns: none
-    def onRelease(event):
-        drag["start"] = None
-
-    figure.canvas.mpl_connect("scroll_event", onScroll)
-    figure.canvas.mpl_connect("button_press_event", onPress)
-    figure.canvas.mpl_connect("motion_notify_event", onMove)
-    figure.canvas.mpl_connect("button_release_event", onRelease)
-
-# Function: getColor
-# Purpose: picks a color for a price, green (cheap) to red (expensive), same as the python map
-# Parameters: 1, the price
-# Side Effects: none
-# Returns: the color as a hex string like "#1a9850"
-def getColor(price):
-    # turns the price into a number from 0 to 1 (0 = LOW_PRICE, 1 = HIGH_PRICE)
-    amount = (price - LOW_PRICE) / (HIGH_PRICE - LOW_PRICE)
-    amount = min(max(amount, 0), 1)
-    return matplotlib.colors.to_hex(plt.get_cmap("RdYlGn_r")(amount))
-
-# Function: graphWebMap
-# Purpose: makes a web map of the meters you can pinch to zoom and drag around in the browser
-#          (the street map loads new pictures at every zoom level, so it stays sharp up close)
-# Parameters: 1, the data
-# Side Effects: saves the map as an html file and opens it in the web browser
-# Returns: none
-def graphWebMap(data):
-    # starts centered on the middle of the area
-    center = [(SOUTH + NORTH) / 2, (WEST + EAST) / 2]
-    webMap = folium.Map(
-        location=center,
-        zoom_start=14,
-        # gray street map (best for seeing the colored dots)
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-        attr="Tiles &copy; Esri",
-        # makes thousands of dots draw much faster
-        prefer_canvas=True
-    )
-
-    for index, row in data.iterrows():
-        color = getColor(row["Price"])
-        folium.CircleMarker(
-            location=[row["Latitude"], row["Longitude"]],
-            radius=4,
-            color=color,
-            fill=True,
-            fill_color=color,
-            fill_opacity=0.9,
-            weight=1,
-            # shows the street and price when you hover over a dot
-            tooltip=row["BlockFace"] + "<br>" + row["RateRange"]
-        ).add_to(webMap)
-
-    # color key in the corner
-    legend = branca.colormap.LinearColormap(
-        [getColor(LOW_PRICE), getColor((LOW_PRICE + HIGH_PRICE) / 2), getColor(HIGH_PRICE)],
-        vmin=LOW_PRICE,
-        vmax=HIGH_PRICE,
-        caption="Highest hourly price ($)"
-    )
-    legend.add_to(webMap)
-
-    # saves the map next to this file and opens it
-    mapFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parking_map.html")
-    webMap.save(mapFile)
-    webbrowser.open("file://" + mapFile)
-    print("Web map opened in your browser:", mapFile)
-
-    figure = ax.figure
-    # remembers where a drag started (in screen pixels) and what the map showed then
-    drag = {"start": None}
-
-    # Function: onScroll
-    # Purpose: zooms in or out around the mouse when you scroll (two fingers on the trackpad)
-    # Parameters: 1, the scroll event
-    # Side Effects: changes the area the map shows
-    # Returns: none
-    def onScroll(event):
-        if event.inaxes != ax:
-            return
-        # scrolling up zooms in, scrolling down zooms out
-        # (step can be a small fraction on a trackpad, so the zoom is smooth)
-        factor = 0.9 ** event.step
-        left, right = ax.get_xlim()
-        bottom, top = ax.get_ylim()
-        # keeps the spot under the mouse in the same place while zooming
-        ax.set_xlim(event.xdata - (event.xdata - left) * factor, event.xdata + (right - event.xdata) * factor)
-        ax.set_ylim(event.ydata - (event.ydata - bottom) * factor, event.ydata + (top - event.ydata) * factor)
-        figure.canvas.draw_idle()
-
-    # Function: onPress
-    # Purpose: starts dragging the map when you click on it
-    # Parameters: 1, the mouse event
-    # Side Effects: saves where the drag started
-    # Returns: none
-    def onPress(event):
-        # skips if you are using the toolbar's zoom or move button
-        toolbar = figure.canvas.toolbar
-        if event.inaxes != ax or event.button != 1 or (toolbar is not None and toolbar.mode != ""):
-            return
-        drag["start"] = (event.x, event.y, ax.get_xlim(), ax.get_ylim())
-
-    # Function: onMove
-    # Purpose: moves the map along with the mouse while you drag
-    # Parameters: 1, the mouse event
-    # Side Effects: changes the area the map shows
-    # Returns: none
-    def onMove(event):
-        if drag["start"] is None:
-            return
-        startX, startY, (left, right), (bottom, top) = drag["start"]
-        # turns how far the mouse moved (in pixels) into how far to move the map
-        box = ax.bbox
-        moveX = (event.x - startX) * (right - left) / box.width
-        moveY = (event.y - startY) * (top - bottom) / box.height
-        ax.set_xlim(left - moveX, right - moveX)
-        ax.set_ylim(bottom - moveY, top - moveY)
-        figure.canvas.draw_idle()
-
-    # Function: onRelease
-    # Purpose: stops dragging when you let go of the mouse
-    # Parameters: 1, the mouse event
-    # Side Effects: clears the saved drag
-    # Returns: none
-    def onRelease(event):
-        drag["start"] = None
-
-    figure.canvas.mpl_connect("scroll_event", onScroll)
-    figure.canvas.mpl_connect("button_press_event", onPress)
-    figure.canvas.mpl_connect("motion_notify_event", onMove)
-    figure.canvas.mpl_connect("button_release_event", onRelease)
-
-# Function: getColor
-# Purpose: picks a color for a price, green (cheap) to red (expensive), same as the python map
-# Parameters: 1, the price
-# Side Effects: none
-# Returns: the color as a hex string like "#1a9850"
-def getColor(price):
-    # turns the price into a number from 0 to 1 (0 = LOW_PRICE, 1 = HIGH_PRICE)
-    amount = (price - LOW_PRICE) / (HIGH_PRICE - LOW_PRICE)
-    amount = min(max(amount, 0), 1)
-    return matplotlib.colors.to_hex(plt.get_cmap("RdYlGn_r")(amount))
-
-# Function: graphWebMap
-# Purpose: makes a web map of the meters you can pinch to zoom and drag around in the browser
-#          (the street map loads new pictures at every zoom level, so it stays sharp up close)
-# Parameters: 1, the data
-# Side Effects: saves the map as an html file and opens it in the web browser
-# Returns: none
-def graphWebMap(data):
-    # starts centered on the middle of the area
-    center = [(SOUTH + NORTH) / 2, (WEST + EAST) / 2]
-    webMap = folium.Map(
-        location=center,
-        zoom_start=14,
-        # gray street map (best for seeing the colored dots)
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-        attr="Tiles &copy; Esri",
-        # makes thousands of dots draw much faster
-        prefer_canvas=True
-    )
-
-    for index, row in data.iterrows():
-        color = getColor(row["Price"])
-        folium.CircleMarker(
-            location=[row["Latitude"], row["Longitude"]],
-            radius=4,
-            color=color,
-            fill=True,
-            fill_color=color,
-            fill_opacity=0.9,
-            weight=1,
-            # shows the street and price when you hover over a dot
-            tooltip=row["BlockFace"] + "<br>" + row["RateRange"]
+            tooltip=row["BlockFace"] + "<br>" + row["RateRange"] + openChance
         ).add_to(webMap)
 
     # color key in the corner
@@ -888,4 +778,7 @@ def main():
     graphMap(data)
     plt.show()
 
-main()
+# only runs main() when you run this file
+# (so build_occupancy.py can use loadFile and cleanData without asking for a file name)
+if __name__ == "__main__":
+    main()
