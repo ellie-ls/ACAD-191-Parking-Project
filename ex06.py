@@ -5,12 +5,17 @@ elinstev@usc.edu & nzhang21@usc.edu
 Exercise 6
 '''
 
+import os
 import re
+import webbrowser
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
 from matplotlib.path import Path
 import contextily
+import folium
+import branca.colormap
 
 SOUTH = 34.025
 NORTH = 34.065
@@ -170,11 +175,15 @@ def graphMap(data):
         figsize=(9, 9)
     )
     ax.set_aspect(1.2)
+<<<<<<< Updated upstream
     ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom)")
 
     colorbar = ax.figure.axes[-1]
     colorbar.yaxis.set_major_formatter("${x:.2f}")
     colorbar.set_ylabel("Highest hourly price")
+=======
+    ax.set_title("LA Parking Meter Prices per Hour (scroll to zoom, drag to move)")
+>>>>>>> Stashed changes
 
     contextily.add_basemap(ax, crs="EPSG:4326", source=contextily.providers.Esri.WorldGrayCanvas)
 
@@ -354,10 +363,133 @@ def graphMap(data):
 
     ax.figure.canvas.mpl_connect("scroll_event", onScroll)
 
+    figure = ax.figure
+    # remembers where a drag started (in screen pixels) and what the map showed then
+    drag = {"start": None}
+
+    # Function: onScroll
+    # Purpose: zooms in or out around the mouse when you scroll (two fingers on the trackpad)
+    # Parameters: 1, the scroll event
+    # Side Effects: changes the area the map shows
+    # Returns: none
+    def onScroll(event):
+        if event.inaxes != ax:
+            return
+        # scrolling up zooms in, scrolling down zooms out
+        # (step can be a small fraction on a trackpad, so the zoom is smooth)
+        factor = 0.9 ** event.step
+        left, right = ax.get_xlim()
+        bottom, top = ax.get_ylim()
+        # keeps the spot under the mouse in the same place while zooming
+        ax.set_xlim(event.xdata - (event.xdata - left) * factor, event.xdata + (right - event.xdata) * factor)
+        ax.set_ylim(event.ydata - (event.ydata - bottom) * factor, event.ydata + (top - event.ydata) * factor)
+        figure.canvas.draw_idle()
+
+    # Function: onPress
+    # Purpose: starts dragging the map when you click on it
+    # Parameters: 1, the mouse event
+    # Side Effects: saves where the drag started
+    # Returns: none
+    def onPress(event):
+        # skips if you are using the toolbar's zoom or move button
+        toolbar = figure.canvas.toolbar
+        if event.inaxes != ax or event.button != 1 or (toolbar is not None and toolbar.mode != ""):
+            return
+        drag["start"] = (event.x, event.y, ax.get_xlim(), ax.get_ylim())
+
+    # Function: onMove
+    # Purpose: moves the map along with the mouse while you drag
+    # Parameters: 1, the mouse event
+    # Side Effects: changes the area the map shows
+    # Returns: none
+    def onMove(event):
+        if drag["start"] is None:
+            return
+        startX, startY, (left, right), (bottom, top) = drag["start"]
+        # turns how far the mouse moved (in pixels) into how far to move the map
+        box = ax.bbox
+        moveX = (event.x - startX) * (right - left) / box.width
+        moveY = (event.y - startY) * (top - bottom) / box.height
+        ax.set_xlim(left - moveX, right - moveX)
+        ax.set_ylim(bottom - moveY, top - moveY)
+        figure.canvas.draw_idle()
+
+    # Function: onRelease
+    # Purpose: stops dragging when you let go of the mouse
+    # Parameters: 1, the mouse event
+    # Side Effects: clears the saved drag
+    # Returns: none
+    def onRelease(event):
+        drag["start"] = None
+
+    figure.canvas.mpl_connect("scroll_event", onScroll)
+    figure.canvas.mpl_connect("button_press_event", onPress)
+    figure.canvas.mpl_connect("motion_notify_event", onMove)
+    figure.canvas.mpl_connect("button_release_event", onRelease)
+
+# Function: getColor
+# Purpose: picks a color for a price, green (cheap) to red (expensive), same as the python map
+# Parameters: 1, the price
+# Side Effects: none
+# Returns: the color as a hex string like "#1a9850"
+def getColor(price):
+    # turns the price into a number from 0 to 1 (0 = LOW_PRICE, 1 = HIGH_PRICE)
+    amount = (price - LOW_PRICE) / (HIGH_PRICE - LOW_PRICE)
+    amount = min(max(amount, 0), 1)
+    return matplotlib.colors.to_hex(plt.get_cmap("RdYlGn_r")(amount))
+
+# Function: graphWebMap
+# Purpose: makes a web map of the meters you can pinch to zoom and drag around in the browser
+#          (the street map loads new pictures at every zoom level, so it stays sharp up close)
+# Parameters: 1, the data
+# Side Effects: saves the map as an html file and opens it in the web browser
+# Returns: none
+def graphWebMap(data):
+    # starts centered on the middle of the area
+    center = [(SOUTH + NORTH) / 2, (WEST + EAST) / 2]
+    webMap = folium.Map(
+        location=center,
+        zoom_start=14,
+        # gray street map (best for seeing the colored dots)
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        attr="Tiles &copy; Esri",
+        # makes thousands of dots draw much faster
+        prefer_canvas=True
+    )
+
+    for index, row in data.iterrows():
+        color = getColor(row["Price"])
+        folium.CircleMarker(
+            location=[row["Latitude"], row["Longitude"]],
+            radius=4,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.9,
+            weight=1,
+            # shows the street and price when you hover over a dot
+            tooltip=row["BlockFace"] + "<br>" + row["RateRange"]
+        ).add_to(webMap)
+
+    # color key in the corner
+    legend = branca.colormap.LinearColormap(
+        [getColor(LOW_PRICE), getColor((LOW_PRICE + HIGH_PRICE) / 2), getColor(HIGH_PRICE)],
+        vmin=LOW_PRICE,
+        vmax=HIGH_PRICE,
+        caption="Highest hourly price ($)"
+    )
+    legend.add_to(webMap)
+
+    # saves the map next to this file and opens it
+    mapFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parking_map.html")
+    webMap.save(mapFile)
+    webbrowser.open("file://" + mapFile)
+    print("Web map opened in your browser:", mapFile)
+
 # Function: main
-# Purpose: runs loadFile, cleanData, graphCounts, and graphMap
+# Purpose: runs loadFile, cleanData, graphWebMap, graphCounts, and graphMap
 # Parameters: none
-# Side Effects: prints to the console, asks for input, shows a chart and a map
+# Side Effects: prints to the console, asks for input, shows a chart and a map, opens a web map
 # Returns: none
 def main():
     fileName = input("Enter the name of the file: ")
@@ -369,6 +501,8 @@ def main():
         return
     print("Meters in the area:", len(data))
 
+    # the web map opens in the browser first, because plt.show() waits until the windows close
+    graphWebMap(data)
     graphCounts(data)
     graphMap(data)
     plt.show()
