@@ -1364,3 +1364,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+"""
+We used Claude AI to code out this project. We began by inputting there previous code structure 
+(which included try blocks and main function) and out dataset to help with the initial visualization. 
+We chose and coded the color scheme of the dots indicating the price of parking and labeled the 
+functions ourselves. Claude added in a lot of additional comments.
+
+We designed the interactive blocks of searching tools, price filter bar, zoom in and out feature, 
+the location label, and the box "chance of a spot is open" on Figma. Then, we connected Figma with Claude
+to integrate the features on the web page interface. 
+"""
