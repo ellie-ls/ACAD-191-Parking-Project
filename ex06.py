@@ -46,21 +46,15 @@ HOVER_DOT_SIZE = 45
 MOVE_STEP = 0.125
 MOVE_DELAY = 20
 
-# web map: search circle size (meters), price slider step, and dot size at each zoom level
 SEARCH_RADIUS = 500
 PRICE_STEP = 0.05
 WEB_DOT_SIZES = [[0, 1], [14, 1.5], [15, 2.5], [16, 4], [17, 6]]
 WEB_HOVER_DOT_SIZE = 11
-# how close the map zooms when you click a dot
 WEB_CLICK_ZOOM = 17
-# smaller area circle (meters) around a clicked dot
 WEB_CLICK_RADIUS = 200
-# plain words for the city's rate types
 RATE_TYPES = {"FLAT": "Flat rate", "TOD": "Changes by time of day", "JUMP": "Jump rate"}
-# how long the web map animations take (milliseconds)
 WEB_FADE_TIME = 220
 WEB_GROW_TIME = 160
-# how long the map takes to glide to a searched place or clicked dot (seconds)
 WEB_ZOOM_TIME = 0.45
 
 # Function: loadFile
@@ -88,8 +82,6 @@ def getPrice(rateText):
         for number in numbers:
             prices.append(float(number))
 
-        # "/H" rates are like "$1.5/H - $6/10H": the first number is the hourly
-        # price and the second is a total for many hours, so only use the first
         if "/H" in rateText:
             return prices[0]
         return max(prices)
@@ -115,7 +107,6 @@ def cleanData(data):
         data = data[data["Longitude"] > WEST]
         data = data[data["Longitude"] < EAST]
 
-        # sorts cheapest to most expensive so the red dots are drawn on top
         data = data.sort_values("Price")
         return data
     except (KeyError, ValueError):
@@ -212,8 +203,6 @@ def graphMap(data):
     figure = ax.figure
     dots = ax.collections[0]
 
-    # the box and the big dot are "animated" so they can be redrawn quickly
-    # on top of a saved picture of the map, instead of redrawing every meter
     bigDot = ax.scatter(
         [], [],
         s=DOT_SIZE,
@@ -286,7 +275,6 @@ def graphMap(data):
     # Returns: none
     def moveHover():
         hover["progress"] = min(1, hover["progress"] + MOVE_STEP)
-        # starts fast and slows down at the end
         eased = hover["progress"] * (2 - hover["progress"])
 
         x = hover["startX"] + (hover["endX"] - hover["startX"]) * eased
@@ -318,7 +306,6 @@ def graphMap(data):
         hover["meter"] = meter
 
         row = data.iloc[meter]
-        # a "\" in front of each "$" keeps matplotlib from reading the prices as math
         box.set_text(row["BlockFace"] + "\n" + row["RateRange"].replace("$", "\\$"))
         bigDot.set_offsets([(row["Longitude"], row["Latitude"])])
         bigDot.set_facecolor(dots.to_rgba(row["Price"]))
@@ -327,10 +314,8 @@ def graphMap(data):
         hover["endX"] = row["Longitude"]
         hover["endY"] = row["Latitude"]
         if box.get_visible():
-            # slide from wherever the box is right now
             hover["startX"], hover["startY"] = box.xy
         else:
-            # the first time, fade in right above the meter
             hover["startX"] = row["Longitude"]
             hover["startY"] = row["Latitude"]
             hover["fading"] = True
@@ -374,7 +359,6 @@ def graphMap(data):
         if event.inaxes != ax:
             return
 
-        # step can be a small fraction on a trackpad, so the zoom is smooth
         step = max(-MAX_SCROLL, min(MAX_SCROLL, event.step))
         scale = ZOOM_SPEED ** step
 
@@ -384,7 +368,6 @@ def graphMap(data):
         ax.set_ylim(zoomSide(south, north, event.ydata, scale, fullSouth, fullNorth))
         figure.canvas.draw_idle()
 
-    # remembers where a drag started (in screen pixels) and what the map showed then
     drag = {"start": None}
 
     # Function: onPress
@@ -393,7 +376,6 @@ def graphMap(data):
     # Side Effects: saves where the drag started
     # Returns: none
     def onPress(event):
-        # skips if you are using the toolbar's zoom or move button
         toolbar = figure.canvas.toolbar
         if event.inaxes != ax or event.button != 1 or (toolbar is not None and toolbar.mode != ""):
             return
@@ -408,7 +390,6 @@ def graphMap(data):
         if drag["start"] is None:
             return
         startX, startY, (left, right), (bottom, top) = drag["start"]
-        # turns how far the mouse moved (in pixels) into how far to move the map
         moveX = (event.x - startX) * (right - left) / ax.bbox.width
         moveY = (event.y - startY) * (top - bottom) / ax.bbox.height
         ax.set_xlim(left - moveX, right - moveX)
@@ -434,7 +415,6 @@ def graphMap(data):
 # Side Effects: none
 # Returns: the color as a hex string like "#1a9850"
 def getColor(price):
-    # turns the price into a number from 0 to 1 (0 = LOW_PRICE, 1 = HIGH_PRICE)
     amount = (price - LOW_PRICE) / (HIGH_PRICE - LOW_PRICE)
     amount = min(max(amount, 0), 1)
     return matplotlib.colors.to_hex(plt.get_cmap("RdYlGn_r")(amount))
@@ -445,7 +425,6 @@ def getColor(price):
 #          so roads stay sharp and street names stay the same size at every zoom.
 #          Map from OpenFreeMap (free, no key needed), drawn with MapLibre.
 class VectorStreetMap(JSCSSMixin, MacroElement):
-    # the JavaScript code that runs on the web page
     _template = Template("""
         {% macro script(this, kwargs) %}
             L.maplibreGL({
@@ -456,7 +435,6 @@ class VectorStreetMap(JSCSSMixin, MacroElement):
         {% endmacro %}
     """)
 
-    # the libraries the web page needs to load
     default_js = [
         ("maplibre", "https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"),
         ("maplibre_leaflet", "https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js")
@@ -470,8 +448,6 @@ class VectorStreetMap(JSCSSMixin, MacroElement):
 #          Each region only shows up once you have zoomed out far enough to see all of it.
 #          Outlines are from the LA Times "Mapping L.A." project (saved in regions.geojson).
 class RegionOutlines(MacroElement):
-    # the style for the region names (goes in the <head> of the web page)
-    # and the JavaScript code that runs on the web page
     _template = Template("""
         {% macro header(this, kwargs) %}
             <style>
@@ -547,7 +523,6 @@ class RegionOutlines(MacroElement):
 #          from occupancy.json (made by build_occupancy.py). A box in the corner lets you pick
 #          the day and hour; it starts on "Right now" (LA time).
 class OpenChance(MacroElement):
-    # the style for the picker and hover text, and the JavaScript code that runs on the web page
     _template = Template("""
         {% macro header(this, kwargs) %}
             <style>
@@ -740,7 +715,6 @@ def getTimeLimit(limitText):
 # Side Effects: adds style and script code to the web map
 # Returns: none
 def addMapTools(webMap, data, showOpenChance):
-    # one list per meter: latitude, longitude, price, color, street, rate, time limit, rate type, space ID
     spots = []
     for index, row in data.iterrows():
         spots.append([
@@ -792,8 +766,8 @@ def addMapTools(webMap, data, showOpenChance):
     .leaflet-container .leaflet-control-zoom.leaflet-bar.parking-zoom { border: 0; box-shadow: none; background: none; display: flex; flex-direction: column; gap: 10px; }
     .leaflet-container .leaflet-control-zoom.leaflet-bar.parking-zoom a { box-sizing: border-box; width: 44px; height: 44px; margin: 0;
         border: 0; border-radius: 10px; background: rgba(2,2,2,0.7);
-        color: white; font: 40px/44px Hubballi, sans-serif; text-indent: 0; }
-    .leaflet-container .leaflet-control-zoom.leaflet-bar.parking-zoom a:hover { background: rgba(2,2,2,0.85); }
+        color: white; font: 40px/44px Hubballi, sans-serif; text-indent: 0; text-decoration: none; }
+    .leaflet-container .leaflet-control-zoom.leaflet-bar.parking-zoom a:hover, .leaflet-container .leaflet-control-zoom.leaflet-bar.parking-zoom a:focus { background: rgba(2,2,2,0.85); text-decoration: none; }
     .leaflet-container .leaflet-control-zoom.leaflet-bar.parking-zoom a.leaflet-disabled { opacity: 0.4; }
     .leaflet-tooltip.parking-tag { padding: 10px 20px 8px; border: 0; border-radius: 16px; background: white; color: black;
         box-shadow: 0 4px 4px rgba(0,0,0,0.25); text-align: center; font-family: Hubballi, "Trebuchet MS", sans-serif; white-space: nowrap; }
@@ -1298,7 +1272,6 @@ def addMapTools(webMap, data, showOpenChance):
     """
     replacements = {
         "__MAP_NAME__": webMap.get_name(),
-        # the slider covers every price in the data (some meters cost more than the color key's top)
         "__LOWEST__": str(data["Price"].min()),
         "__HIGHEST__": str(data["Price"].max()),
         "__PRICE_STEP__": str(PRICE_STEP),
@@ -1317,10 +1290,8 @@ def addMapTools(webMap, data, showOpenChance):
     }
     for key in replacements:
         script = script.replace(key, replacements[key])
-    # the data goes in last, so street names can't be mistaken for a placeholder
     script = script.replace("__SPOTS__", json.dumps(spots))
 
-    # a MacroElement's script runs after the map is made, so the code can use it
     tools = branca.element.MacroElement()
     tools._template = branca.element.Template("{% macro script(this, kwargs) %}" + script + "{% endmacro %}")
     webMap.add_child(tools)
@@ -1334,21 +1305,16 @@ def addMapTools(webMap, data, showOpenChance):
 # Side Effects: saves the map as an html file and opens it in the web browser
 # Returns: none
 def graphWebMap(data):
-    # starts centered on the middle of the area
     center = [(SOUTH + NORTH) / 2, (WEST + EAST) / 2]
     webMap = folium.Map(
         location=center,
         zoom_start=14,
-        # the street map is added below instead
         tiles=None,
-        # makes thousands of dots draw much faster
         prefer_canvas=True
     )
 
-    # light gray street map that the browser draws itself, so it stays sharp at every zoom
     VectorStreetMap().add_to(webMap)
 
-    # outlines and names for Koreatown, Downtown, and South LA (only shown when zoomed out)
     regionFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "regions.geojson")
     try:
         with open(regionFile) as file:
@@ -1356,7 +1322,6 @@ def graphWebMap(data):
     except FileNotFoundError:
         print("regions.geojson not found, so the map will not show region outlines")
 
-    # "Usually open X% of the time" in the hover boxes
     occupancy = loadOccupancy()
     if occupancy is not None:
         spaceIds = data["SpaceID"].str.strip()
@@ -1367,11 +1332,8 @@ def graphWebMap(data):
         dates = monthName(occupancy["from"]) + " \u2013 " + monthName(occupancy["to"])
         OpenChance(onMap, dates).add_to(webMap)
 
-    # dots, search box, price slider, zoom buttons, and street details
-    # (the open chance goes in each dot's street tag when occupancy.json is there)
     addMapTools(webMap, data, occupancy is not None)
 
-    # saves the map next to this file and opens it
     mapFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parking_map.html")
     webMap.save(mapFile)
     webbrowser.open("file://" + mapFile)
@@ -1392,13 +1354,10 @@ def main():
         return
     print("Meters in the area:", len(data))
 
-    # the web map opens in the browser first, because plt.show() waits until the windows close
     graphWebMap(data)
     graphCounts(data)
     graphMap(data)
     plt.show()
 
-# only runs main() when you run this file
-# (so build_occupancy.py can use loadFile and cleanData without asking for a file name)
 if __name__ == "__main__":
     main()
