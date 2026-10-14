@@ -551,26 +551,44 @@ class OpenChance(MacroElement):
     _template = Template("""
         {% macro header(this, kwargs) %}
             <style>
+                /* same dark panel style as the search box and street details box */
                 .open-chance-picker {
-                    background: #fff;
-                    border-radius: 6px;
-                    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-                    font: 13px/1.4 system-ui, sans-serif;
-                    padding: 8px 10px;
+                    background: rgba(31, 31, 31, 0.85);
+                    border-radius: 10px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+                    color: white;
+                    font-family: Hubballi, "Trebuchet MS", sans-serif;
+                    font-size: 15px;
+                    line-height: 1.3;
+                    padding: 14px 18px 12px;
+                    width: 280px;
+                    max-width: calc(100vw - 76px);
                 }
                 .open-chance-picker label {
                     display: block;
-                    font-weight: 600;
-                    margin-bottom: 4px;
+                    font-size: 20px;
+                    margin-bottom: 8px;
                 }
                 .open-chance-picker select {
                     font: inherit;
-                    margin-right: 4px;
+                    font-size: 15px;
+                    margin-right: 6px;
+                    padding: 4px 8px;
+                    border: 0;
+                    border-radius: 8px;
+                    background: white;
+                    color: #1f1f1f;
+                    cursor: pointer;
+                }
+                .open-chance-picker select:disabled {
+                    background: #c7cdb2;
+                    color: #555;
+                    cursor: default;
                 }
                 .open-chance-picker .note {
-                    color: #64748b;
-                    font-size: 11px;
-                    margin-top: 4px;
+                    color: #bbb;
+                    font-size: 13px;
+                    margin-top: 8px;
                 }
                 .open-chance-note {
                     color: #64748b;
