@@ -69,8 +69,11 @@ WEB_ZOOM_TIME = 0.45
 # Side Effects: prints a warning if file is not found
 # Returns: data
 def loadFile(fileName):
+    # looks in the project folder (next to this file), so it works for anyone,
+    # no matter which folder their terminal is in
+    filePath = os.path.join(os.path.dirname(os.path.abspath(__file__)), fileName)
     try:
-        data = pd.read_csv(fileName)
+        data = pd.read_csv(filePath)
         return data
     except FileNotFoundError:
         print("File not found")

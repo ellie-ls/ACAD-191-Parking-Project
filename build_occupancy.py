@@ -21,8 +21,9 @@ import pandas as pd
 from multiprocessing import Pool
 from ex06 import loadFile
 
-# folder with the Sensor_Transactions_*.csv files (or pass a folder when running the script)
-SENSOR_FOLDER = "/Users/elizalin-stevens/Downloads/parking tracking"
+# folder with the Sensor_Transactions_*.csv files, inside the project folder
+# (or pass a different folder when running the script)
+SENSOR_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parking tracking")
 
 # checks what every meter is doing every 5 minutes
 SAMPLE_MINUTES = 5
@@ -45,7 +46,7 @@ SLOTS = 7 * 24
 # Purpose: counts, for every meter, how many 5-minute checks were open in each hour slot
 # Parameters: 1, the path to one month's sensor file
 # Side Effects: prints when the month is done
-# Returns: a dictionary of SpaceID -> (open counts, total counts, set of weeks with data)
+# Returns: a dictionary of SpaceID -> (open counts, total counts, slot + week pairs with data)
 def readMonth(path):
     data = pd.read_csv(path, usecols=["SpaceID", "EventTime_Local", "OccupancyState"], dtype=str)
     data["SpaceID"] = data["SpaceID"].str.strip()
@@ -77,7 +78,8 @@ def readMonth(path):
         openCount = np.bincount(checkSlots[isOpen], minlength=SLOTS)
         totalCount = np.bincount(checkSlots[valid], minlength=SLOTS)
         # which weeks had data in each slot (to make sure a number is based on enough weeks)
-        weeks = set(zip(checkSlots[valid].tolist(), checkWeeks[valid].tolist()))
+        # each slot + week pair is saved as one number, like slot 38 in week 190 -> 38000190
+        weeks = np.unique(checkSlots[valid] * 1000000 + checkWeeks[valid])
         counts[spaceId] = (openCount, totalCount, weeks)
 
     print("done", os.path.basename(path), flush=True)
@@ -93,17 +95,17 @@ def addUp(months):
     for month in months:
         for spaceId, (openCount, totalCount, weeks) in month.items():
             if spaceId not in totals:
-                totals[spaceId] = [np.zeros(SLOTS), np.zeros(SLOTS), set()]
+                totals[spaceId] = [np.zeros(SLOTS), np.zeros(SLOTS), []]
             totals[spaceId][0] += openCount
             totals[spaceId][1] += totalCount
-            totals[spaceId][2] |= weeks
+            totals[spaceId][2].append(weeks)
 
     result = {}
     for spaceId, (openCount, totalCount, weeks) in totals.items():
-        weeksPerSlot = np.zeros(SLOTS)
-        for slot, week in weeks:
-            weeksPerSlot[slot] += 1
-        allWeeks = len(set(week for slot, week in weeks))
+        # a week can show up in two months (when it crosses the 1st), so only count it once
+        weeks = np.unique(np.concatenate(weeks))
+        weeksPerSlot = np.bincount(weeks // 1000000, minlength=SLOTS)
+        allWeeks = len(np.unique(weeks % 1000000))
         result[spaceId] = (openCount, totalCount, weeksPerSlot, allWeeks)
     return result
 
@@ -146,6 +148,11 @@ def getMeterLocations(fileName):
 # Returns: none
 def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else SENSOR_FOLDER
+
+    if not os.path.isdir(folder):
+        print("Folder not found:", folder)
+        return
+
     files = sorted(glob.glob(os.path.join(folder, "Sensor_Transactions_*.csv")))
     if len(files) == 0:
         print("No Sensor_Transactions_*.csv files found in", folder)
@@ -155,6 +162,7 @@ def main():
     # reads 4 months at a time to go faster
     with Pool(4) as pool:
         months = pool.map(readMonth, files)
+    print("Adding up all the months...")
     measured = addUp(months)
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -169,6 +177,7 @@ def main():
             "source": "measured"
         }
 
+    print("Filling in meters without a sensor from nearby ones...")
     # meters without a sensor borrow from up to 5 of the closest sensored meters within 100 m
     hasSensor = meters["SpaceID"].isin(measured.keys()).to_numpy()
     sensorX = meters["X"].to_numpy()[hasSensor]
@@ -203,6 +212,7 @@ def main():
     first = os.path.basename(files[0])[len("Sensor_Transactions_"):-4]
     last = os.path.basename(files[-1])[len("Sensor_Transactions_"):-4]
     outFile = os.path.join(here, "occupancy.json")
+    print("Saving...")
     with open(outFile, "w") as file:
         json.dump({"from": first, "to": last, "meters": output}, file, separators=(",", ":"))
 

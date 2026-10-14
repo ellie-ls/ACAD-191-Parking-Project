@@ -1,0 +1,4 @@
+# 8 GB of raw sensor data, rebuild occupancy.json from it with build_occupancy.py
+parking tracking/
+__pycache__/
+.DS_Store
